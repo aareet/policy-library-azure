@@ -1,0 +1,53 @@
+import "tfplan/v2" as tfplan
+import "eval"
+
+param valid_actions default [
+	["no-op"],
+	["create"],
+	["read"],
+	["update"],
+	["delete", "create"],
+	["create", "delete"],
+	["delete"],
+]
+
+param deny_list default [
+	"CustomScriptExtension",
+	"CustomScript",
+	"CustomScriptForLinux",
+]
+
+doc = {
+	"id":        "ARM-CIS-7.4",
+	"resource":  "azurerm_virtual_machine_extension",
+	"name":      "Ensure that only approved extensions are installed",
+	"reference": "https://git.io/JK2Nv",
+}
+
+virtual_machine_extensions = filter tfplan.resource_changes as _, resource_changes {
+	resource_changes.type is "azurerm_virtual_machine_extension" and
+		resource_changes.mode is "managed" and
+		resource_changes.change.actions in valid_actions
+}
+
+violations = filter virtual_machine_extensions as _, extension {
+		extension.change.after.type in deny_list
+}
+
+summary = {
+	"id":        doc.id,
+	"name":      doc.name,
+	"reference": doc.reference,
+	"violations": map violations as _, violation {
+		{
+			"name":    violation.name,
+			"address": violation.address,
+			"type":    violation.type,
+			"message": violation.change.after.type + " virtual machine extension is NOT allowed",
+		}
+	},
+}
+
+main = rule {
+	eval.summary(summary, "warn")
+}

@@ -1,0 +1,50 @@
+import "tfplan/v2" as tfplan
+import "eval"
+
+param valid_actions default [
+	["no-op"],
+	["create"],
+	["read"],
+	["update"],
+	["delete", "create"],
+	["create", "delete"],
+	["delete"],
+]
+
+doc = {
+	"id":        "ARM-CIS-7.1",
+	"resource":  "azurerm_managed_disk",
+	"name":      "Ensure that managed disks are encrypted",
+	"reference": "https://git.io/JK2Nv",
+}
+
+managed_disks = filter tfplan.resource_changes as _, resource_changes {
+	resource_changes.type is doc.resource and
+		resource_changes.mode is "managed" and
+		resource_changes.change.actions in valid_actions
+}
+
+violations = filter managed_disks as _, disks {
+	disks.change.after.encryption_settings is empty and
+		all disks.change.after.encryption_settings as encryption_settings {
+			encryption_settings.enabled is not true
+		}
+}
+
+summary = {
+	"id":        doc.id,
+	"name":      doc.name,
+	"reference": doc.reference,
+	"violations": map violations as _, violation {
+		{
+			"name":    violation.name,
+			"address": violation.address,
+			"type":    violation.type,
+			"message":  violation.change.after.encryption_settings[0].enabled else "encryption settings are not defined",
+		}
+	},
+}
+
+main = rule {
+	eval.summary(summary, "warn")
+}
